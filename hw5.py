@@ -2,7 +2,6 @@ import json
 import numpy as np
 import pandas as pd
 import pathlib
-import re
 from typing import Union, Tuple
 
 class QuestionnaireAnalysis:
@@ -71,27 +70,42 @@ class QuestionnaireAnalysis:
         Returns
         -------
         df : pd.DataFrame
-          The corrected DataFrame after insertion of the mean grade
+        The corrected DataFrame after insertion of the mean grade
         arr : np.ndarray
-          Row indices of the students that their new grades were generated
+        Row indices of the students that their new grades were generated
         """
+        # Make a copy of the original data to modify
         df = self.data.copy()
-        missing_indices = []
-
-        # Iterate over rows to replace NaN values
-        for index, row in df.iterrows():
-            grades_cols = [col for col in row.index if 'grade' in col]
-            grades = row[grades_cols]
+        # Identify columns that contain grades (assuming they are all columns except 'age' and 'email')
+        grade_columns = [col for col in df.columns if col not in ['age', 'email', "id", "first_name", "last_name", "timestamp", "gender"]]
+        # Initialize a list to track rows that were corrected
+        corrected_rows = []
+        # Iterate over rows in the DataFrame
+        for idx, row in df.iterrows():
+            # Get the grades for the current row
+            grades = row[grade_columns]
             
-            # Check if there are NaNs in the grades columns
-            if grades.isna().any():
-                non_nan_grades = grades.dropna()
-                if not non_nan_grades.empty:
-                    mean_grade = non_nan_grades.mean()
-                    df.loc[index, grades.isna()] = mean_grade
-                    missing_indices.append(index)
+            # Check if there are missing values
+            
+            somethingIsNan = False
+            nanIndices = []
+            
+            grades.replace('nan', np.nan, inplace=True)
+                
+            if grades.isnull().any():
+                # Calculate the mean of non-missing grades
+                mean_grade = grades.dropna().mean()
+                
+                # Replace NaN values with the mean
+                df.loc[idx, grade_columns] = grades.fillna(mean_grade)
+                # Append the index of the corrected row
+                corrected_rows.append(idx)
         
-        return df, np.array(missing_indices)
+        # Convert the list of corrected row indices to a numpy array
+        corrected_indices = np.array(corrected_rows)
+        
+        return df, corrected_indices
+
 
     def score_subjects(self, maximal_nans_per_sub: int = 1) -> pd.DataFrame:
         """Calculates the average score of a subject and adds a new "score" column
@@ -99,8 +113,7 @@ class QuestionnaireAnalysis:
 
         If the subject has more than "maximal_nans_per_sub" NaN in his grades, the
         score should be NA. Otherwise, the score is simply the mean of the other grades.
-        The datatype of score is UInt8, and the floating point raw numbers should be
-        rounded down.
+        The datatype of score is UInt8, and the floating point raw numbers should be rounded down.
 
         Parameters
         ----------
@@ -112,34 +125,52 @@ class QuestionnaireAnalysis:
         pd.DataFrame
             A new DF with a new column - "score".
         """
-        df = self.data.copy()
-        scores = []
-
-        for index, row in df.iterrows():
-            grades = row.loc[row.index.str.contains('grade')].values
-            nans = np.isnan(grades)
-            
-            if np.sum(nans) > maximal_nans_per_sub:
-                scores.append(pd.NA)
-            else:
-                mean_score = np.nanmean(grades)
-                scores.append(np.floor(mean_score).astype(np.uint8))
+        # Create a copy of the original data to avoid modifying it directly
+        # df = self.data.copy()
         
-        df['score'] = pd.Series(scores, dtype=pd.UInt8Dtype())
+        # Assuming grades start from the second column
+        # grade_columns = df.columns[1:]
+        
+        # def calculate_score(grades):
+        #     nan_count = grades.isna().sum()
+        #     if nan_count > maximal_nans_per_sub:
+        #         return np.nan
+        #     else:
+        #         mean_grade = grades.mean()
+        #         return np.floor(mean_grade).astype(np.uint8)
+        
+        # df['score'] = df[grade_columns].apply(calculate_score, axis=1)
+        # return df
+
+        # Make a copy of the original data to modify
+        df = self.data.copy()
+        # Identify columns that contain grades (assuming they are all columns except 'age' and 'email')
+        grade_columns = [col for col in df.columns if col not in ['age', 'email', "id", "first_name", "last_name", "timestamp", "gender"]]
+        # Initialize a list to track rows that were corrected
+        corrected_rows = []
+        # Iterate over rows in the DataFrame
+        df['Score'] = np.nan
+
+        score = None
+        for idx, row in df.iterrows():
+            # Get the grades for the current row
+            grades = row[grade_columns]
+            
+            # Check if there are missing values
+            grades.replace('nan', np.nan, inplace=True)
+                
+            if grades.isnull().any():
+                # Calculate the mean of non-missing grades
+                grades_no_na = grades.dropna()
+                if (len(grades_no_na) >= 4):
+                    score = grades_no_na.mean()
+                else:
+                    score = 'nan'
+        df.loc[idx, 'Score'] = score
+        print(df.loc[idx, 'Score'])
+        
         return df
-    
-    def correlate_gender_age(self) -> pd.DataFrame:
-        """Calculates the correlation between gender and age.
 
-        Returns
-        -------
-        pd.DataFrame
-            A DataFrame with the correlation between 'gender' and 'age'.
-        """
-        if 'gender' not in self.data.columns or 'age' not in self.data.columns:
-            raise ValueError("DataFrame must contain 'gender' and 'age' columns for correlation.")
-
-        # Pivot table to get mean age by gender
-        correlation = self.data.groupby(['gender', 'age']).size().unstack(fill_value=0).corr().reset_index()
-
-        return correlation
+qa = QuestionnaireAnalysis("/Users/adicantor/Documents/sagol courses/sagol_python_24/hw5-2024/data.json")
+qa.read_data()
+qa.score_subjects()
