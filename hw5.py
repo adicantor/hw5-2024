@@ -149,7 +149,8 @@ class QuestionnaireAnalysis:
         # Initialize a list to track rows that were corrected
         corrected_rows = []
         # Iterate over rows in the DataFrame
-        df['Score'] = np.nan
+        df['score'] = pd.Series(dtype='UInt8')
+        
 
         score = None
         for idx, row in df.iterrows():
@@ -158,16 +159,17 @@ class QuestionnaireAnalysis:
             
             # Check if there are missing values
             grades.replace('nan', np.nan, inplace=True)
-                
-            if grades.isnull().any():
-                # Calculate the mean of non-missing grades
-                grades_no_na = grades.dropna()
-                if (len(grades_no_na) >= 4):
-                    score = grades_no_na.mean()
-                else:
-                    score = 'nan'
-        df.loc[idx, 'Score'] = score
-        print(df.loc[idx, 'Score'])
+            grades_no_na = grades.dropna()
+            if len(grades_no_na) < len(grade_columns) - maximal_nans_per_sub:
+                #score = pd.NA
+                continue
+            else:
+                # Calculate mean, round down, and convert to UInt8
+                score = np.floor(grades_no_na.mean()).astype(np.uint8)
+            
+            
+            df.loc[idx, 'score'] = score
+            print(str(idx) + ", " + str(df.loc[idx, 'score']))
         
         return df
 
